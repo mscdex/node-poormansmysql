@@ -75,7 +75,7 @@ MysqlConnection Events:
     	sys.puts('Uh oh, ' + err);
     });
     conn.addListener('row', function(rowdata, sql) {
-    	sys.puts("'" + sql + "' generated a row: " + sys.inspect(row));
+    	sys.puts("'" + sql + "' generated a row: " + sys.inspect(rowdata));
     });
     conn.addListener('queryDone', function(sql) {
     	sys.puts("Done with query: " + sql);
