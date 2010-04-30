@@ -10,26 +10,24 @@ function MysqlConnection(newconfig) {
 		db: null,
 		host: 'localhost',
 		port: 3306,
-		connect_timeout: 0, // in seconds
-		query_timeout: 0 // in seconds (TODO)
+		force: false, // execute ALL queries in the case of a query error (TODO)
+		connect_timeout: 0, // the time to wait for a connection to the MySQL server (in seconds)
+		execute_timeout: 0 // the time to wait for ALL queries to execute (in seconds) (TODO)
 	};
 	var config;
 
 	var queries = [];
 
+	var _lastError = null;
 	var _affectedRows = 0;
 	var _lastInsertId = 0; // 0 means no row(s) inserted
 	var isInserting = false;
 
-	/* Bookkeeping */
-	var curQuery = null;
+	/* Query bookkeeping */
+	var curQueryIdx = 0;
 	var curRow = null;
 	var curField = null;
-	var queryTotal = 0;
-	var queryCount = 0;
-	var lastIndex = 0;
-
-	var lastError = null;
+	var cbQueriesComplete;
 
 	var proc = null;
 	var parser;
@@ -44,23 +42,37 @@ function MysqlConnection(newconfig) {
 			config[option] = (typeof newconfig[option] != "undefined" ? newconfig[option] : default_config[option]);
 	}
 
-	this.query = function(sql) {
-		sql = sql.replace(/^\s*/, "").replace(/\s*$/, "").replace('"', '\"');
-		queries.push(sql);
+	this.query = function(sql/*, cbRow, cbComplete, cbError*/) {
+		if (sql == null || (sql = sql.replace(/^\s*/, "").replace(/\s*$/, "")) == "")
+			return;
+
 		if (sql.substr(0, 6).toUpperCase() == "INSERT")
 			isInserting = true;
+		queries.push({query: sql,
+					  cbRow: (arguments.length >= 2 && typeof arguments[1] == 'function' ? arguments[1] : null),
+					  cbComplete: (arguments.length >= 3 && typeof arguments[2] == 'function' ? arguments[2] : null),
+					  cbError: (arguments.length == 4 && typeof arguments[3] == 'function' ? arguments[3] : null)
+		});
 	}
 
-	this.execute = function() {
+	this.execute = function(/*cbDone*/) {
 		if (queries.length > 0 && config.user != null && config.password != null) {
-			queries.push("SELECT ROW_COUNT() AS _node_poormansmysql_affectedRows");
-			if (isInserting) {
-				queries.push("SELECT LAST_INSERT_ID() AS _node_poormansmysql_lastInsertId");
-				lastIndex = queries.length-3;
-			} else
-				lastIndex = queries.length-2;
+			cbQueriesComplete = (arguments.length == 1 && typeof arguments[1] == 'function' ? arguments[1] : null);
 
-			proc = spawn('/bin/sh', ['-c', 'mysql --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + ' --execute="' + queries.join('; ') + '"']);
+			this.query("SELECT ROW_COUNT() AS _node_poormansmysql_affectedRows", function(row) {
+				_affectedRows = row['_node_poormansmysql_affectedRows'];
+			});
+			if (isInserting) {
+				this.query("SELECT LAST_INSERT_ID() AS _node_poormansmysql_lastInsertId", function(row) {
+					_affectedRows = row['_node_poormansmysql_lastInsertId'];
+				});
+			}
+
+			var strQueries = "";
+			for (var i = 0, len = queries.length; i < len; i++)
+				strQueries += queries[i].query.replace('"', '\"') + (i + 1 < len ? "; " : "");
+
+			proc = spawn('/bin/sh', ['-c', 'mysql --force --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' --execute="' + strQueries + '"']);
 
 			proc.stdout.setEncoding('utf8');
 			proc.stderr.setEncoding('utf8');
@@ -68,29 +80,49 @@ function MysqlConnection(newconfig) {
 			proc.stdout.addListener('data', function(data) {
 				// UGLY HACK: There is one XML declaration for each MySQL query, so remove the extra ones where applicable, otherwise libxml throws a fit.
 				var header = "<?xml version=\"1.0\"?>\n";
-				if (queryCount == 0 && data.substr(0, header.length) == header)
+				if (data.substr(0, header.length) == header)
 					data = header + "<results>\n" + data.substr(header.length);
 				data = data.replace("\n" + header, "");
 				parser.push(data);
 			});
 			proc.stderr.addListener('data', function(data) {
-				if (/^execvp\(\)/.test(data))
-					lastError = 'Spawn Error: Failed to start child process.';
-				else
-					lastError = 'MySQL Error: ' + data;
+				var completeError = true;
+				if (/^execvp\(\)/.test(data)) {
+					_lastError = 'Spawn Error: Failed to start child process.';
+					completeError = true;
+				} else {
+					// Check for segmented/partial MySQL errors from stderr
+					if (data.substr(0, 5) == "ERROR") {
+						_lastError = data; //'MySQL Error: ' + data;
+						if (data.length == 5)
+							completeError = false;
+					} else {
+						_lastError += data;
+						if (data.substr(0, 2) != ": ")
+							completeError = false;
+					}
+					// For now, assume the cause of this MySQL error is the current query.
+					// Eventually it'd be ideal to parse the SQLSTATE code to distinguish between query-specific and other (server) errors
+					if (completeError) {
+						if (queries[curQueryIdx].cbError) {
+							queries[curQueryIdx].cbError(_lastError);
+							// Don't notify the user twice
+							completeError = false;
+						}
+						curQueryIdx++;
+					}
+				}
 
-				self.emit('error', lastError);
+				if (completeError)
+					self.emit('error', _lastError);
 			});
 			proc.addListener('exit', function(code) {
-				if (code == 0) {
-					parser.push("</results>");
-					queryCount = 0;
-				}
+				parser.push("</results>");
+				queries = [];
+				curQueryIdx = 0;
+				isInserting = false;
 			});
 
-			queryTotal = queries.length;
-			queries = [];
-			isInserting = false;
 			return true;
 		} else
 			return false;
@@ -98,15 +130,14 @@ function MysqlConnection(newconfig) {
 
 	this.__defineGetter__('affectedRows', function () { return _affectedRows; });
 	this.__defineGetter__('lastInsertId', function () { return _lastInsertId; });
+	this.__defineGetter__('lastError', function () { return _lastError; });
 	
 	/* Initialization */
 
 	this.setConfig(newconfig);
 	parser = new libxml.SaxPushParser(function(cb) {
 		cb.onStartElementNS(function(elem, attrs, prefix, uri, namespaces) {
-			if (elem == "resultset")
-				curQuery = attrs[0][3];
-			else if (elem == "row")
+			if (elem == "row")
 				curRow = {};
 			else if (elem == "field") {
 				curField = attrs[0][3];
@@ -115,18 +146,13 @@ function MysqlConnection(newconfig) {
 		});
 		cb.onEndElementNS(function(elem, prefix, uri) {
 			if (elem == "resultset") {
-				if (queryCount <= lastIndex)
-					self.emit('queryDone', curQuery);
-				curQuery = null;
-				if (++queryCount == queryTotal)
-					self.emit('done');
+				if (queries[curQueryIdx].cbComplete)
+					queries[curQueryIdx].cbComplete();
+				if (++curQueryIdx == queries.length && cbQueriesComplete)
+					cbQueriesComplete();
 			} else if (elem == "row") {
-				if (typeof curRow['_node_poormansmysql_lastInsertId'] != 'undefined')
-					_lastInsertId = curRow['_node_poormansmysql_lastInsertId'];
-				else if (typeof curRow['_node_poormansmysql_affectedRows'] != 'undefined')
-					_affectedRows = curRow['_node_poormansmysql_affectedRows'];
-				else
-					self.emit('row', curRow, curQuery);
+				if (queries[curQueryIdx].cbRow)
+					queries[curQueryIdx].cbRow(curRow);
 				curRow = null;
 			} else if (elem == "field")
 				curField = null;
