@@ -10,7 +10,7 @@ function MysqlConnection(newconfig) {
 		db: null,
 		host: 'localhost',
 		port: 3306,
-		force: false, // execute ALL queries in the case of a query error (TODO)
+		force: false, // execute ALL queries even if any of the queries results in error(s)
 		connect_timeout: 0, // the time to wait for a connection to the MySQL server (in seconds)
 		execute_timeout: 0 // the time to wait for ALL queries to execute (in seconds) (TODO)
 	};
@@ -70,9 +70,9 @@ function MysqlConnection(newconfig) {
 
 			var strQueries = "";
 			for (var i = 0, len = queries.length; i < len; i++)
-				strQueries += queries[i].query.replace('"', '\"') + (i + 1 < len ? "; " : "");
+				strQueries += queries[i].query.replace("\\", "\\\\").replace('"', '\"') + (i + 1 < len ? "; " : "");
 
-			proc = spawn('/bin/sh', ['-c', 'mysql --force --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' --execute="' + strQueries + '"']);
+			proc = spawn('/bin/sh', ['-c', 'echo "' + strQueries + '" | mysql --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' | cat']);
 
 			proc.stdout.setEncoding('utf8');
 			proc.stderr.setEncoding('utf8');
