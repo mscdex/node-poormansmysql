@@ -27,6 +27,7 @@ function MysqlConnection(newconfig) {
 	var curQueryIdx = 0;
 	var curRow = null;
 	var curField = null;
+
 	var cbQueriesComplete;
 
 	var proc = null;
@@ -49,6 +50,7 @@ function MysqlConnection(newconfig) {
 		if (sql.substr(0, 6).toUpperCase() == "INSERT")
 			isInserting = true;
 		queries.push({query: sql,
+					  hasError: false,
 					  cbRow: (arguments.length >= 2 && typeof arguments[1] == 'function' ? arguments[1] : null),
 					  cbComplete: (arguments.length >= 3 && typeof arguments[2] == 'function' ? arguments[2] : null),
 					  cbError: (arguments.length == 4 && typeof arguments[3] == 'function' ? arguments[3] : null)
@@ -70,7 +72,7 @@ function MysqlConnection(newconfig) {
 
 			var strQueries = "";
 			for (var i = 0, len = queries.length; i < len; i++)
-				strQueries += queries[i].query.replace("\\", "\\\\").replace('"', '\"') + (i + 1 < len ? "; " : "");
+				strQueries += queries[i].query.replace("\\", "\\\\").replace("\"", "\\\"") + (i + 1 < len ? ";\n" : "");
 
 			proc = spawn('/bin/sh', ['-c', 'echo "' + strQueries + '" | mysql --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' | cat']);
 
@@ -101,15 +103,17 @@ function MysqlConnection(newconfig) {
 						if (data.substr(0, 2) != ": ")
 							completeError = false;
 					}
-					// For now, assume the cause of this MySQL error is the current query.
 					// Eventually it'd be ideal to parse the SQLSTATE code to distinguish between query-specific and other (server) errors
 					if (completeError) {
-						if (queries[curQueryIdx].cbError) {
-							queries[curQueryIdx].cbError(_lastError);
+						var errInfo = /^ERROR ([\d]+?) \((.+?)\) at line ([\d]+?): /.exec(_lastError);
+						if (queries[errInfo[3]-1].cbError) {
+							// The line number indicated in _lastError should be disregarded in callbacks since queries should always be one line
+							// and we use the line number internally to track/identify each query
+							queries[errInfo[3]-1].cbError(_lastError);
 							// Don't notify the user twice
 							completeError = false;
 						}
-						curQueryIdx++;
+						queries[errInfo[3]-1].hasError = true;
 					}
 				}
 
@@ -118,6 +122,12 @@ function MysqlConnection(newconfig) {
 			});
 			proc.addListener('exit', function(code) {
 				parser.push("</results>");
+				// Fire the "complete" callback for any leftover non-select queries that were successful since the MySQL command-line client
+				// doesn't give any output for successful non-select queries in batch mode.
+				for (var i = 0, len = queries.length; i < len; i++) {
+					if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
+						queries[i].cbComplete();
+				}
 				queries = [];
 				curQueryIdx = 0;
 				isInserting = false;
@@ -137,7 +147,12 @@ function MysqlConnection(newconfig) {
 	this.setConfig(newconfig);
 	parser = new libxml.SaxPushParser(function(cb) {
 		cb.onStartElementNS(function(elem, attrs, prefix, uri, namespaces) {
-			if (elem == "row")
+			if (elem == "resultset") {
+				// Skip bad queries or queries that don't return rows until we get to the one
+				// that must be associated with this resultset
+				while (queries[curQueryIdx].hasError || !(/^select/i.test(queries[curQueryIdx].query)))
+					curQueryIdx++;
+			} else if (elem == "row")
 				curRow = {};
 			else if (elem == "field") {
 				curField = attrs[0][3];
