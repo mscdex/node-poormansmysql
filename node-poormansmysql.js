@@ -125,13 +125,16 @@ function MysqlConnection(newconfig) {
 			proc.addListener('exit', function(code) {
 				parser.push("</results>");
 				if (!hasCriticalError) {
+					var foundError = false;
 					// Fire the "complete" callback for any leftover non-select queries that were successful since the MySQL command-line client
 					// doesn't give any output for successful non-select queries in batch mode.
 					for (var i = 0, len = queries.length; i < len; i++) {
 						if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
 							queries[i].cbComplete();
+						else if (queries[i].hasError && !foundError)
+							foundError = true;
 					}
-					if (cbQueriesComplete)
+					if (!foundError && cbQueriesComplete)
 						cbQueriesComplete();
 				}
 				queries = [];
@@ -170,8 +173,7 @@ function MysqlConnection(newconfig) {
 			if (elem == "resultset") {
 				if (queries[curQueryIdx].cbComplete)
 					queries[curQueryIdx].cbComplete();
-				if (++curQueryIdx == queries.length && cbQueriesComplete)
-					cbQueriesComplete();
+				curQueryIdx++;
 			} else if (elem == "row") {
 				if (queries[curQueryIdx].cbRow)
 					queries[curQueryIdx].cbRow(curRow);
