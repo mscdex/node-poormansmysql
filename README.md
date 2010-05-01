@@ -24,7 +24,7 @@ MysqlConnection Methods:
                 db: null,
                 host: 'localhost',
                 port: 3306,
-				force: false, // execute ALL queries in the case of a query error (TODO)
+				force: false, // execute ALL queries in the case of a query error
                 connect_timeout: 0, // the time to wait for a connection to the MySQL server (in seconds)
                 execute_timeout: 0 // the time to wait for ALL queries to execute (in seconds) (TODO)
     * **Return Value**: (MysqlConnection) An instance of MysqlConnection.
