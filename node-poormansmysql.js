@@ -60,7 +60,7 @@ function MysqlConnection(newconfig) {
 
 	this.execute = function(/*cbDone*/) {
 		if (queries.length > 0 && config.user != null && config.password != null) {
-			cbQueriesComplete = (arguments.length == 1 && typeof arguments[1] == 'function' ? arguments[1] : null);
+			cbQueriesComplete = (arguments.length == 1 && typeof arguments[0] == 'function' ? arguments[0] : null);
 
 			this.query("SELECT ROW_COUNT() AS _node_poormansmysql_affectedRows", function(row) {
 				_affectedRows = row['_node_poormansmysql_affectedRows'];
@@ -131,6 +131,8 @@ function MysqlConnection(newconfig) {
 						if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
 							queries[i].cbComplete();
 					}
+					if (cbQueriesComplete)
+						cbQueriesComplete();
 				}
 				queries = [];
 				curQueryIdx = 0;
