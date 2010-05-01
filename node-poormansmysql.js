@@ -18,6 +18,7 @@ function MysqlConnection(newconfig) {
 
 	var queries = [];
 
+	var hasCriticalError = false;
 	var _lastError = null;
 	var _affectedRows = 0;
 	var _lastInsertId = 0; // 0 means no row(s) inserted
@@ -103,17 +104,18 @@ function MysqlConnection(newconfig) {
 						if (data.substr(0, 2) != ": ")
 							completeError = false;
 					}
-					// Eventually it'd be ideal to parse the SQLSTATE code to distinguish between query-specific and other (server) errors
 					if (completeError) {
-						var errInfo = /^ERROR ([\d]+?) \((.+?)\) at line ([\d]+?): /.exec(_lastError);
-						if (queries[errInfo[3]-1].cbError) {
-							// The line number indicated in _lastError should be disregarded in callbacks since queries should always be one line
-							// and we use the line number internally to track/identify each query
-							queries[errInfo[3]-1].cbError(_lastError);
-							// Don't notify the user twice
-							completeError = false;
-						}
-						queries[errInfo[3]-1].hasError = true;
+						if ((errInfo = /^ERROR ([\d]+?) \((.+?)\) at line ([\d]+?): /.exec(_lastError)) != null) {
+							if (queries[errInfo[3]-1].cbError) {
+								// The line number indicated in _lastError should be disregarded in callbacks since queries should always be one line
+								// and we use the line number internally to track/identify each query
+								queries[errInfo[3]-1].cbError(_lastError);
+								// Don't notify the user twice
+								completeError = false;
+							}
+							queries[errInfo[3]-1].hasError = true;
+						} else
+							hasCriticalError = true;
 					}
 				}
 
@@ -122,15 +124,18 @@ function MysqlConnection(newconfig) {
 			});
 			proc.addListener('exit', function(code) {
 				parser.push("</results>");
-				// Fire the "complete" callback for any leftover non-select queries that were successful since the MySQL command-line client
-				// doesn't give any output for successful non-select queries in batch mode.
-				for (var i = 0, len = queries.length; i < len; i++) {
-					if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
-						queries[i].cbComplete();
+				if (!hasCriticalError) {
+					// Fire the "complete" callback for any leftover non-select queries that were successful since the MySQL command-line client
+					// doesn't give any output for successful non-select queries in batch mode.
+					for (var i = 0, len = queries.length; i < len; i++) {
+						if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
+							queries[i].cbComplete();
+					}
 				}
 				queries = [];
 				curQueryIdx = 0;
 				isInserting = false;
+				hasCriticalError = false;
 			});
 
 			return true;
