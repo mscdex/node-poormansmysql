@@ -4,6 +4,7 @@ var inherits = require('sys').inherits;
 var EventEmitter = require('events').EventEmitter;
 
 function MysqlConnection(newconfig) {
+	EventEmitter.call(this);
 	var default_config = {
 		user: null,
 		password: null,
@@ -166,7 +167,10 @@ function MysqlConnection(newconfig) {
 				curRow = {};
 			else if (elem == "field") {
 				curField = attrs[0][3];
-				curRow[curField] = null;
+				if (attrs.length > 1 && attrs[1][0] == "nil" && attrs[1][3] == "true")
+					curRow[curField] = null;
+				else
+					curRow[curField] = "";
 			}
 		});
 		cb.onEndElementNS(function(elem, prefix, uri) {
