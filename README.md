@@ -65,16 +65,25 @@ MysqlConnection Methods:
 MysqlConnection Events:
 
 * **error**
-  * **Description**: Fired when an error occurs. This can be either a non-query-specific (i.e. system or server-specific) MySQL error or a child process spawning error.
-  * **Parameters**:
-     * _err_: (String) The error details.
+    * **Description**: Fired when an error occurs. This can be either a non-query-specific (i.e. system or server-specific) MySQL error or a child process spawning error.
+    * **Parameters**:
+        * _err_: (String) The error details.
+
+Utility methods exposed:
+
+* **escape**(str)
+    * **Description**: Performs <u>basic</u> string escaping, similar to the PHP function mysql_escape_string.
+    * **Parameters**:
+        * _str_: (String) The string to escape.
 
 
 # Example
 
     var pmm = require('./node-poormansmysql'), sys = require('sys');
 
+	var fieldvalue = "o'reilly";
     var conn = new pmm.MysqlConnection({user: 'foo', password: 'bar', db: 'baz'});
+
     conn.addListener('error', function(err) {
     	sys.puts('Uh oh, ' + err);
     });
@@ -90,7 +99,7 @@ MysqlConnection Events:
     		sys.puts("First query resulted in error: " + err);
     	}
     );
-    conn.query("SELECT * FROM table2",
+    conn.query("SELECT * FROM table2 WHERE field = '" + pmm.escape(fieldvalue) + "'",
     	function(row) {
     		sys.puts("Got result for second query: " + JSON.stringify(row));
     	},

@@ -3,6 +3,10 @@ var libxml = require('./libxmljs');
 var inherits = require('sys').inherits;
 var EventEmitter = require('events').EventEmitter;
 
+function mysql_escape(str) {
+	return str.replace(/[\\"']/g, "\\$&").replace(/[\n]/g, "\\n").replace(/[\r]/g, "\\r").replace(/\x00/g, "\\0");
+}
+
 function MysqlConnection(newconfig) {
 	EventEmitter.call(this);
 	var default_config = {
@@ -197,4 +201,5 @@ function MysqlConnection(newconfig) {
 };
 inherits(MysqlConnection, EventEmitter);
 
+exports.escape = mysql_escape;
 exports.MysqlConnection = MysqlConnection;
