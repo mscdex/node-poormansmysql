@@ -33,7 +33,7 @@ MysqlConnection Methods:
     * **Parameters**: 
         * _config_: (Object) An object containing the necessary connection information to connect to the MySQL server and perform queries. At least the user and password should be supplied. See above for the default configuration.
     * **Return Value**: None
-* **query**(_sql_ [, _cbRow_, _cbComplete_, _cbError_])
+* **query**(_sql_ [, _cbRow_[, _cbComplete_[, _cbError_]]])
     * **Description**: Enqueues an SQL statement.
     * **Parameters**:
         * _sql_: (String) A valid SQL statement. Do not include a trailing semicolon at the end of the statement.
@@ -41,7 +41,8 @@ MysqlConnection Methods:
             * **Parameters**:
                 * _row_: (Object) A hash containing a single row from the results of the query.
         * _cbComplete_ (Optional): (Function) A callback for when the query has completed and all rows have been returned.
-            * **Parameters**: None
+            * **Parameters**:
+                * _totalRows_: (Integer) The total number of rows returned by the query.
         * _cbError_ (Optional): (Function) A callback for when the query results in a MySQL error.
             * **Parameters**:
                 * _err_: (String) The entire MySQL error message.
@@ -92,8 +93,8 @@ Utility methods exposed:
     	function(row) {
     		sys.puts("Got result for first query: " + JSON.stringify(row));
     	},
-    	function() {
-    		sys.puts("First query is done!");
+    	function(totalRows) {
+    		sys.puts("First query is done! Retrieved " + totalRows + " row(s)");
     	},
     	function(err) {
     		sys.puts("First query resulted in error: " + err);
@@ -103,8 +104,8 @@ Utility methods exposed:
     	function(row) {
     		sys.puts("Got result for second query: " + JSON.stringify(row));
     	},
-    	function() {
-    		sys.puts("Second query is done!");
+    	function(totalRows) {
+    		sys.puts("Second query is done! Retrieved " + totalRows + " row(s)");
     	},
     	function(err) {
     		sys.puts("Second query resulted in error: " + err);

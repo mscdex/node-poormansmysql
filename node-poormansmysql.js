@@ -56,6 +56,7 @@ function MysqlConnection(newconfig) {
 		if (sql.substr(0, 6).toUpperCase() == "INSERT")
 			isInserting = true;
 		queries.push({query: sql,
+					  numRows: 0,
 					  hasError: false,
 					  cbRow: (arguments.length >= 2 && typeof arguments[1] == 'function' ? arguments[1] : null),
 					  cbComplete: (arguments.length >= 3 && typeof arguments[2] == 'function' ? arguments[2] : null),
@@ -135,7 +136,7 @@ function MysqlConnection(newconfig) {
 					// doesn't give any output for successful non-select queries in batch mode.
 					for (var i = 0, len = queries.length; i < len; i++) {
 						if (!queries[i].hasError && !(/^select/i.test(queries[i].query)) && queries[i].cbComplete)
-							queries[i].cbComplete();
+							queries[i].cbComplete(queries[i].numRows);
 						else if (queries[i].hasError && !foundError)
 							foundError = true;
 					}
@@ -180,11 +181,12 @@ function MysqlConnection(newconfig) {
 		cb.onEndElementNS(function(elem, prefix, uri) {
 			if (elem == "resultset") {
 				if (queries[curQueryIdx].cbComplete)
-					queries[curQueryIdx].cbComplete();
+					queries[curQueryIdx].cbComplete(queries[curQueryIdx].numRows);
 				curQueryIdx++;
 			} else if (elem == "row") {
 				if (queries[curQueryIdx].cbRow)
 					queries[curQueryIdx].cbRow(curRow);
+				queries[curQueryIdx].numRows++;
 				curRow = null;
 			} else if (elem == "field")
 				curField = null;
