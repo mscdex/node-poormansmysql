@@ -80,7 +80,7 @@ function MysqlConnection(newconfig) {
 			for (var i = 0, len = queries.length; i < len; i++)
 				strQueries += queries[i].query.replace("\\", "\\\\").replace("\"", "\\\"") + (i + 1 < len ? ";\n" : "");
 
-			proc = spawn('/bin/sh', ['-c', 'echo "' + strQueries + '" | mysql --xml --quick --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' | cat']);
+			proc = spawn('/bin/sh', ['-c', 'echo "' + strQueries + '" | mysql --xml --quick --unbuffered --disable-auto-rehash --connect_timeout=' + config.connect_timeout + ' --host=' + config.host + ' --port=' + config.port + ' --user=' + config.user + ' --password=' + config.password + (config.db != null ? ' --database=' + config.db : '') + (config.force == true ? ' --force' : '') + ' | cat']);
 
 			proc.stdout.setEncoding('utf8');
 			proc.stderr.setEncoding('utf8');
